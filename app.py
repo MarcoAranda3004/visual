@@ -19,7 +19,7 @@ st.set_page_config(
 )
 
 def mostrar_dashboard():
-    st.title("📊 Predicción de Precios de Frutas y Verduras")
+    st.title("📊 Predicción de Precios de Frutas")
 
     # RUTA DINÁMICA ABSOLUTA: Detecta automáticamente la carpeta del proyecto
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
