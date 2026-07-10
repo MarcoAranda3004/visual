@@ -69,7 +69,7 @@ def procesar_pdf_stream(bytes_data, nombre_original):
     if not resultados: return pd.DataFrame()
 
     df_diario = pd.DataFrame(resultados)
-    for col in ['volumen_hoy', 'volumen_7dias', 'precio_ayer', 'precio_7dias', 'precio_hoy_kg']:\
+    for col in ['volumen_hoy', 'volumen_7dias', 'precio_ayer', 'precio_7dias', 'precio_hoy_kg']:
         df_diario[col] = pd.to_numeric(df_diario[col], errors='coerce').fillna(0).round(2)
 
     df_diario['fecha_dt'] = pd.to_datetime(df_diario['fecha_original'].apply(format_fecha), errors='coerce', dayfirst=True)
@@ -93,9 +93,15 @@ def mostrar_admin():
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     CSV_DIR = os.path.join(BASE_DIR, "csv")
 
+    # Inicializar la variable de sesión para el estado del login
     if "autenticado" not in st.session_state:
         st.session_state["autenticado"] = False
 
+    # Inicializar variables de estado para los mensajes persistentes tras el rerun
+    if "mensaje_exito" not in st.session_state:
+        st.session_state["mensaje_exito"] = None
+
+    # Formulario de Login Simple
     if not st.session_state["autenticado"]:
         st.subheader("🔑 Acceso Restringido")
         
@@ -119,6 +125,15 @@ def mostrar_admin():
             st.rerun()
             
         st.markdown("---")
+
+        # Mostrar el mensaje de éxito aquí arriba si quedó guardado de la acción anterior
+        if st.session_state["mensaje_exito"]:
+            st.success(st.session_state["mensaje_exito"])
+            st.session_state["mensaje_exito"] = None  # Lo limpiamos para que no vuelva a aparecer
+
+        # ---------------------------------------------------------------------
+        # SECCIÓN 1: CARGA MASIVA E INYECCIÓN DE PRODUCTOS DESDE PDF
+        # ---------------------------------------------------------------------
         st.markdown("#### 📈 Extraer Precios Reales de PDF e Integrar al Histórico")
         st.write("Sube el reporte diario en formato **PDF**. El sistema extraerá las tablas de datos de manera automática y las anexará a tu archivo acumulado histórico.")
 
@@ -139,7 +154,6 @@ def mostrar_admin():
         else:
             nombre_real_archivo = "decretos_fluviales_anuales.csv"
 
-        # AHORA EL TIPO ACEPTADO ES SÓLO ["pdf"]
         archivo_subido = st.file_uploader(f"Arrastra aquí el reporte diario en PDF para actualizar {nombre_real_archivo}", type=["pdf"])
 
         if archivo_subido is not None:
@@ -206,6 +220,114 @@ def mostrar_admin():
                         st.cache_data.clear()
                         st.cache_resource.clear()
                         
-                        st.success(f"✅ ¡Éxito! Se añadieron {len(df_nuevas_filas)} registros del PDF al archivo maestro. El dashboard se ha actualizado.")
+                        # Guardar mensaje de éxito en estado de sesión antes de reiniciar la página
+                        st.session_state["mensaje_exito"] = f"✅ ¡Éxito! Se añadieron {len(df_nuevas_filas)} registros del PDF al archivo maestro."
+                        st.rerun()
             except Exception as e:
                 st.error(f"❌ Error crítico procesando o guardando los datos: {str(e)}")
+
+        # ---------------------------------------------------------------------
+        # SECCIÓN 2: FORMULARIO INDEPENDIENTE PARA DIESEL (INGRESO MANUAL)
+        # ---------------------------------------------------------------------
+        st.markdown("---")
+        st.markdown("### ✍️ Ingreso Manual de Datos (Diesel)")
+        st.write("Registra de forma directa el precio del combustible para que se agregue al histórico.")
+        
+        nombre_real_archivo_diesel = "precios_diesel_anual.csv"
+        ruta_destino_diesel = os.path.join(CSV_DIR, nombre_real_archivo_diesel)
+
+        lista_meses = [
+            "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
+            "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+        ]
+
+        with st.form("form_diesel_manual"):
+            col1, col2, col3 = st.columns(3)
+            anio_diesel = col1.number_input("Año", value=2026, step=1, key="anio_diesel")
+            mes_nombre = col2.selectbox("Mes", options=lista_meses)
+            precio = col3.number_input("Precio Lima (Soles)", format="%.2f")
+            
+            btn_guardar_diesel = st.form_submit_button("Guardar Diesel en CSV")
+            
+            if btn_guardar_diesel:
+                mes_num = lista_meses.index(mes_nombre) + 1
+                
+                nueva_fila_diesel = pd.DataFrame({
+                    'anio': [anio_diesel],
+                    'mes_num': [mes_num],
+                    'mes_nombre': [mes_nombre],
+                    'diesel_lima_soles': [precio]
+                })
+                
+                if os.path.exists(ruta_destino_diesel):
+                    df_hist = pd.read_csv(ruta_destino_diesel)
+                    df_hist.columns = df_hist.columns.str.strip().str.lower()
+                    df_final = pd.concat([df_hist, nueva_fila_diesel], ignore_index=True)
+                else:
+                    df_final = nueva_fila_diesel
+                    
+                df_final = df_final.drop_duplicates()
+                df_final.to_csv(ruta_destino_diesel, index=False)
+                
+                st.cache_data.clear()
+                st.cache_resource.clear()
+                
+                st.session_state["mensaje_exito"] = f"✅ ¡Fila de Diesel agregada correctamente para {mes_nombre} ({mes_num})!"
+                st.rerun()
+
+        # ---------------------------------------------------------------------
+        # SECCIÓN 3: FORMULARIO INDEPENDIENTE PARA DECRETOS FLUVIALES
+        # ---------------------------------------------------------------------
+        st.markdown("---")
+        st.markdown("### 📜 Ingreso Manual de Decretos Fluviales / Bloqueos")
+        st.write("Registra un nuevo decreto o evento de impacto logístico directo en la base de datos.")
+
+        nombre_real_archivo_decretos = "decretos_fluviales_anuales.csv"
+        ruta_destino_decretos = os.path.join(CSV_DIR, nombre_real_archivo_decretos)
+
+        with st.form("form_decretos_manual"):
+            col1, col2, col3 = st.columns(3)
+            decreto = col1.text_input("Decreto (Ej: D.S. N° 001-2020-PCM)")
+            anio_decreto = col2.number_input("Año", value=2026, step=1, key="anio_dec")
+            tipo = col3.selectbox("Tipo", ["Original", "Prórroga"])
+            
+            col4, col5 = st.columns(2)
+            evento = col4.text_input("Evento (Ej: Lluvias Intensas / Huaicos)")
+            zona_impacto = col5.text_input("Zona de Impacto Logístico (Ej: Eje Centro (Carretera Central))")
+            
+            col6, col7 = st.columns(2)
+            fecha_inicio_dt = col6.date_input("Fecha de Inicio")
+            fecha_fin_dt = col7.date_input("Fecha de Fin")
+            
+            btn_guardar_decreto = st.form_submit_button("Guardar Decreto en CSV")
+            
+            if btn_guardar_decreto:
+                # Conversión de las fechas devueltas por date_input a cadenas de texto (DD/MM/YYYY)
+                fecha_inicio_str = fecha_inicio_dt.strftime('%d/%m/%Y')
+                fecha_fin_str = fecha_fin_dt.strftime('%d/%m/%Y')
+                
+                nueva_fila_decreto = pd.DataFrame({
+                    'decreto': [decreto],
+                    'anio': [anio_decreto],
+                    'tipo': [tipo],
+                    'evento': [evento],
+                    'zona_impacto_logistico': [zona_impacto],
+                    'fecha_inicio': [fecha_inicio_str],
+                    'fecha_fin': [fecha_fin_str]
+                })
+                
+                if os.path.exists(ruta_destino_decretos):
+                    df_hist_dec = pd.read_csv(ruta_destino_decretos)
+                    df_hist_dec.columns = df_hist_dec.columns.str.strip().str.lower()
+                    df_final_dec = pd.concat([df_hist_dec, nueva_fila_decreto], ignore_index=True)
+                else:
+                    df_final_dec = nueva_fila_decreto
+                    
+                df_final_dec = df_final_dec.drop_duplicates()
+                df_final_dec.to_csv(ruta_destino_decretos, index=False)
+                
+                st.cache_data.clear()
+                st.cache_resource.clear()
+                
+                st.session_state["mensaje_exito"] = f"✅ ¡Decreto {decreto} guardado con éxito!"
+                st.rerun()
