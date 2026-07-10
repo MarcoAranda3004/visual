@@ -142,8 +142,6 @@ def mostrar_admin():
             "Selecciona la base de datos a la que deseas añadir datos:",
             [
                 "dataset_productos_anual.csv (Precios de Frutas/Verduras)",
-                "precios_diesel_anual.csv (Precios de Combustible)",
-                "decretos_fluviales_anuales.csv (Historial de Bloqueos)"
             ]
         )
 
